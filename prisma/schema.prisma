@@ -1,0 +1,144 @@
+// Prisma Schema for Hemanth Ice Creams Luxury 3D Platform
+// Multi-provider compatible (SQLite default for zero-setup demo, PostgreSQL ready)
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id          String     @id @default(uuid())
+  phoneNumber String     @unique
+  email       String?
+  name        String
+  role        String     @default("CUSTOMER") // "CUSTOMER", "KITCHEN", "ADMIN"
+  pinCode     String?    // Security PIN for Admin & Kitchen Staff
+  isActive    Boolean    @default(true)
+  lastLoginAt DateTime?
+  createdAt   DateTime   @default(now())
+  updatedAt   DateTime   @updatedAt
+  orders      Order[]
+  loginLogs   LoginLog[]
+}
+
+model LoginLog {
+  id          String   @id @default(uuid())
+  userId      String?
+  user        User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
+  phoneNumber String
+  name        String?
+  role        String   // "CUSTOMER", "KITCHEN", "ADMIN"
+  status      String   @default("SUCCESS") // "SUCCESS", "FAILED"
+  loginMethod String   // "OTP", "VIP_ONE_CLICK", "STAFF_PIN", "ADMIN_SECRET"
+  ipAddress   String?  @default("127.0.0.1")
+  userAgent   String?
+  createdAt   DateTime @default(now())
+}
+
+model Flavour {
+  id             String          @id @default(uuid())
+  slug           String          @unique
+  name           String
+  tagline        String
+  description    String
+  tastingNotes   String
+  primaryColor   String          // Dark base hex for luxury tub
+  secondaryColor String          // Accent gold / secondary hex
+  accentColor    String          // Highlight foil hex
+  badge          String?         // "Signature Reserve", "Artisanal Classic", etc.
+  texturePattern String          // Texture identifier for 3D procedural shader/canvas
+  ingredients    String
+  displayOrder   Int             @default(0)
+  isActive       Boolean         @default(true)
+  createdAt      DateTime        @default(now())
+  updatedAt      DateTime        @updatedAt
+  inventoryItems InventoryItem[]
+}
+
+model InventoryItem {
+  id               String                 @id @default(uuid())
+  flavourId        String
+  flavour          Flavour                @relation(fields: [flavourId], references: [id], onDelete: Cascade)
+  size             String                 // "G500" or "G1000"
+  price            Float                  // In INR (e.g., 380 or 690)
+  stockQuantity    Int                    @default(50) // Total physical uncommitted stock
+  reservedQuantity Int                    @default(0)  // Active 10-minute holds
+  version          Int                    @default(0)  // Optimistic lock counter
+  createdAt        DateTime               @default(now())
+  updatedAt        DateTime               @updatedAt
+  reservations     InventoryReservation[]
+  orderItems       OrderItem[]
+
+  @@unique([flavourId, size])
+}
+
+model InventoryReservation {
+  id              String        @id @default(uuid())
+  orderId         String
+  order           Order         @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  inventoryItemId String
+  inventoryItem   InventoryItem @relation(fields: [inventoryItemId], references: [id], onDelete: Cascade)
+  quantity        Int
+  expiresAt       DateTime      // 10-minute pessimistic hold TTL
+  status          String        @default("HELD") // HELD, COMMITTED, EXPIRED, RELEASED
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime      @updatedAt
+}
+
+model Order {
+  id                   String                 @id @default(uuid())
+  orderNumber          String                 @unique
+  userId               String?
+  user                 User?                  @relation(fields: [userId], references: [id])
+  customerName         String
+  customerPhone        String
+  deliveryType         String                 @default("DELIVERY") // DELIVERY, DINE_IN, TAKEAWAY
+  qrContext            String?                // JSON string e.g. {"table":"T12","zone":"VIP-Lounge"}
+  latitude             Float?
+  longitude            Float?
+  deliveryAddress      String?
+  subtotal             Float
+  tax                  Float
+  deliveryFee          Float                  @default(0)
+  totalAmount          Float
+  status               String                 @default("PENDING_PAYMENT") // PENDING_PAYMENT, PAID_CONFIRMED, PREPARING, OUT_FOR_DELIVERY, DELIVERED, CANCELLED, EXPIRED
+  reservationExpiresAt DateTime?
+  createdAt            DateTime               @default(now())
+  updatedAt            DateTime               @updatedAt
+  orderItems           OrderItem[]
+  reservations         InventoryReservation[]
+  paymentTransactions  PaymentTransaction[]
+}
+
+model OrderItem {
+  id              String        @id @default(uuid())
+  orderId         String
+  order           Order         @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  inventoryItemId String
+  inventoryItem   InventoryItem @relation(fields: [inventoryItemId], references: [id])
+  flavourName     String
+  size            String        // "500g" or "1000g"
+  unitPrice       Float
+  quantity        Int
+  totalPrice      Float
+}
+
+model PaymentTransaction {
+  id               String   @id @default(uuid())
+  orderId          String
+  order            Order    @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  gateway          String   @default("UPI_DEMO") // UPI_DEMO, RAZORPAY, STRIPE
+  gatewayOrderId   String?
+  gatewayPaymentId String?
+  gatewaySignature String?
+  amount           Float
+  currency         String   @default("INR")
+  status           String   @default("INITIATED") // INITIATED, SUCCESS, FAILED, REFUNDED
+  payloadJson      String?
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+}
